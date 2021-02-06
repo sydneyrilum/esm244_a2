@@ -13,61 +13,95 @@ library(tidyverse)
 library(here)
 library(janitor)
 library(broom)
+library(ggbeeswarm)
 library(stargazer)
 library(kableExtra)
 
 ```
 
 ## Introduction
-using the Florida palmetto data (palmetto.csv), use binary logistic regression to test feasibility of using variables plant height (height), canopy length (length), canopy width (width), and number of green leaves (green_lvs) to classify whether a palmetto is species Serenoa repens (species 1) or Sabal etonia (species 2).
 
-## Data Exploration
+In this report, binary logistic regression is utilized to test the feasibility of using the variables plant height, canopy length, canopy width, and number of green leaves to classify whether a palmetto plant is of the species *Serenoa repens* (species 1) or *Sabal etonia* (species 2). The data was acquired from [Abrahamson's 2019 study](https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5) conducted in south-central Florida from 1981 - 2017, at 5 year intervals, for the two dominant palmetto species.
+
+
+## Exploratory Data Visualizations
 ```{r}
 # Read in the data
 palmetto <- read_csv(here("data", "palmetto.csv"),
                      col_types = cols(.default = 'c')) %>% # read in everything as character type to guarantee no parsing failures
-  mutate(height = as.numeric(height)) %>% 
+  mutate(height = as.numeric(height)) %>%  # change interested variables to numeric class
   mutate(width = as.numeric(width)) %>% 
   mutate(length = as.numeric(length)) %>% 
   mutate(green_lvs = as.numeric(green_lvs))
 
 ```
 
-A section containing 2 - 3 finalized data visualizations (with figure captions) in which you explore differences in height, canopy length, canopy width, and green leaves for the two species. Add a figure caption to each. Below each data visualization, add a short (~1 sentence) statement with a takeaway from the visualization.
 
 ```{r, fig.align = "center"}
-# Data visualizations
-
-
-# add labs with units (cm)
-# change to proper species name
+# Data visualization, height vs. length
 ggplot(data = palmetto, aes(x = length, y = height)) +
-  geom_point(aes(color = species)) 
+  geom_point(aes(color = species)) +
+  scale_color_discrete(name = "Palmetto Species",
+                       breaks = c("1", "2"),
+                       labels = c("Serenoa repens", "Sabal etonia")) +
+  scale_color_manual(values = c("darkseagreen","lightskyblue")) +
+  labs(x = "Canopy Length (cm)",
+       y = "Plant Height (cm)",
+       title = "Palmetto Height vs. Canopy Length") +
+  theme_minimal() 
 
-ggplot(data = palmetto, aes(x = width, y = length)) +
-  geom_point(aes(color = species)) 
+```
 
-ggplot(data = palmetto, aes(x = width, y = height)) +
-  geom_point(aes(color = species)) 
+**Figure 1.** Exploratory plot comparing the relationship between palmetto height (cm) and canopy length (cm) by species. Data: Abrahamson (2019).
 
+For both palmetto species, plant height appears to increase with increase in canopy length.
+
+
+```{r, fig.align = "center"}
+# Data visualization, height vs. green leaf count
 ggplot(data = palmetto, aes(x = green_lvs, y = height)) +
   geom_point(aes(color = species)) +
-  facet_wrap(~ species)
-
-ggplot(data = palmetto, aes(x = green_lvs, y = length)) +
-  geom_point(aes(color = species)) +
-  facet_wrap(~ species)
-
-ggplot(data = palmetto, aes(x = green_lvs, y = width)) +
-  geom_point(aes(color = species),
-              alpha = 0.5) +
-  labs(x = "green leaves",
-       y = "width (cm)",
-       color = "Species")
-  
-ggplot(data = palmetto, aes(x = species, y = green_lvs)) +
-  geom_jitter(aes(color = species))
+  facet_wrap(~ species) +
+  scale_color_discrete(name = "Palmetto Species",
+                       breaks = c("1", "2"),
+                       labels = c("Serenoa repens", "Sabal etonia")) +
+  labs(x = "Number of Green Leaves",
+       y = "Plant Height (cm)",
+       title = "Palmetto Height vs. Green Leaf Count") +
+  theme_minimal()
 ```
+
+**Figure 2.** Exploratory plot comparing the relationship between palmetto height (cm) and number of green leaves observed for each species. Data: Abrahamson (2019).
+
+The number of green leaves on a palmetto plant has a slight trend of higher green leaf count with an increase plant height. *Serenoa repens* species has a greater range of number of green leaves, from 1 - 15 leaves, while the *Sabal etonia* species has a smaller range of 0 - 10 leaves and smaller max count of 10 leaves.
+
+```{r, fig.align = "center"}
+# Data visualization, green leaf count by species  
+ggplot(data = palmetto, aes(x = species, y = green_lvs)) +
+  geom_jitter(aes(color = species,
+                  alpha = 0.3)) +
+  scale_color_manual(values = c("darkseagreen","lightskyblue")) +
+  geom_boxplot(fill = NA, 
+               width = 0.8) +
+  stat_summary(fun=mean, 
+               geom="point", 
+               shape=20, 
+               size=3, 
+               color="black", 
+               fill="black") +
+  scale_x_discrete(breaks = c("1", "2"),
+                   labels = c("Serenoa repens", "Sabal etonia")) +
+  labs(x = "Palmetto Species",
+       y = "Number of Green Leaves",
+       title = "Green Leaf Count by Palmetto Species") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+**Figure 3.** Comparison between the number of green leaves on the palmetto species *Serenoa repens* and *Sabal etonia*. Box endpoints indicate the 25^th^ and 75^th^ percentile values; the black line and black point within the box indicate the median and mean value for each species, respectively. Data: Abrahamson (2019).
+
+*Serenoa repens* species has a greater mean and median number of green leaves (~7.5) per plant, as well as a larger range, than that of the *Sabal etonia* species with a mean and median number of ~4 green leaves per plant.
+
 
 ## Binary Logistic Regression
 
@@ -78,7 +112,7 @@ palmetto_species <- palmetto %>%
   mutate(species = as.factor(species)) 
 
 # Check the levels
-levels(palmetto_species$species)
+# levels(palmetto_species$species)
 
 # Binary Logistic Regression
 palmetto_blr <- glm(species ~ height + length + width + green_lvs, 
@@ -86,23 +120,22 @@ palmetto_blr <- glm(species ~ height + length + width + green_lvs,
                             family = "binomial")
 
 # Look at the model
-palmetto_blr
+# palmetto_blr
 
-summary(palmetto_blr)
+# summary(palmetto_blr)
 
 # Get a tidy version w/ broom: 
 palmetto_blr_tidy <- broom::tidy(palmetto_blr)
 
 ```
 
-**Table 1.** 
-
+**Table 1.** A table containing the binary logistic regression model results that predicts the probability of a palmetto plant being *Serenoa repens* or *Sabal etonia*, based off the predictor variables: plant height, canopy length, canopy width, and number of green leaves. Coefficients, standard errors (in parentheses), and significance information are indicated for each predictor variable based on the dependent variable (*Sabal etonia* species). Data: Abrahamson (2019).
 <div align="center">
 ```{r, results = 'asis'}
 # Present binary linear regression model outcome in a finalized regression table
 stargazer(palmetto_blr, type = "html", 
           title = "Binary Linear Regression Results",
-          dep.var.labels = "Species = Sabal etonia",
+          dep.var.labels = "Species: Sabal etonia",
           covariate.labels = c("Height", "Length", "Width", "Green leaf count"))
 ```
 </div>
@@ -150,7 +183,7 @@ palmetto_table['percent_correct'] = palmetto_table['correct'] / (palmetto_table[
 ```
 
 
-**Table 2.** 
+**Table 2.** A table containing the number of palmetto plants in the original dataset correctly and incorrectly classified as their species by the binary logistic regression model. The percent correctly classified is displayed for each species. Data: Abrahamson (2019).
 ```{r}
 # Finalized table
 kbl(palmetto_table, digits = 2,
@@ -159,7 +192,6 @@ kbl(palmetto_table, digits = 2,
   column_spec(1, italic = TRUE)
 
 ```
-
 
 
 **Data Citation:** [Abrahamson, W.G. 2019. Survival, growth and biomass estimates of two dominant palmetto species of south-central Florida from 1981 - 2017, ongoing at 5-year intervals ver 1. Environmental Data Initiative.](https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5)
