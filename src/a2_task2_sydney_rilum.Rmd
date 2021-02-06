@@ -1,0 +1,165 @@
+---
+title: "Palmetto Binary Logistic Regression"
+author: "Sydney Rilum"
+date: "2/3/2021"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(here)
+library(janitor)
+library(broom)
+library(stargazer)
+library(kableExtra)
+
+```
+
+## Introduction
+using the Florida palmetto data (palmetto.csv), use binary logistic regression to test feasibility of using variables plant height (height), canopy length (length), canopy width (width), and number of green leaves (green_lvs) to classify whether a palmetto is species Serenoa repens (species 1) or Sabal etonia (species 2).
+
+## Data Exploration
+```{r}
+# Read in the data
+palmetto <- read_csv(here("data", "palmetto.csv"),
+                     col_types = cols(.default = 'c')) %>% # read in everything as character type to guarantee no parsing failures
+  mutate(height = as.numeric(height)) %>% 
+  mutate(width = as.numeric(width)) %>% 
+  mutate(length = as.numeric(length)) %>% 
+  mutate(green_lvs = as.numeric(green_lvs))
+
+```
+
+A section containing 2 - 3 finalized data visualizations (with figure captions) in which you explore differences in height, canopy length, canopy width, and green leaves for the two species. Add a figure caption to each. Below each data visualization, add a short (~1 sentence) statement with a takeaway from the visualization.
+
+```{r, fig.align = "center"}
+# Data visualizations
+
+
+# add labs with units (cm)
+# change to proper species name
+ggplot(data = palmetto, aes(x = length, y = height)) +
+  geom_point(aes(color = species)) 
+
+ggplot(data = palmetto, aes(x = width, y = length)) +
+  geom_point(aes(color = species)) 
+
+ggplot(data = palmetto, aes(x = width, y = height)) +
+  geom_point(aes(color = species)) 
+
+ggplot(data = palmetto, aes(x = green_lvs, y = height)) +
+  geom_point(aes(color = species)) +
+  facet_wrap(~ species)
+
+ggplot(data = palmetto, aes(x = green_lvs, y = length)) +
+  geom_point(aes(color = species)) +
+  facet_wrap(~ species)
+
+ggplot(data = palmetto, aes(x = green_lvs, y = width)) +
+  geom_point(aes(color = species),
+              alpha = 0.5) +
+  labs(x = "green leaves",
+       y = "width (cm)",
+       color = "Species")
+  
+ggplot(data = palmetto, aes(x = species, y = green_lvs)) +
+  geom_jitter(aes(color = species))
+```
+
+## Binary Logistic Regression
+
+```{r}
+# Create a subset of data containing only variables needed for blr
+palmetto_species <- palmetto %>% 
+  select(species, height:green_lvs) %>% 
+  mutate(species = as.factor(species)) 
+
+# Check the levels
+levels(palmetto_species$species)
+
+# Binary Logistic Regression
+palmetto_blr <- glm(species ~ height + length + width + green_lvs, 
+                            data = palmetto_species, 
+                            family = "binomial")
+
+# Look at the model
+palmetto_blr
+
+summary(palmetto_blr)
+
+# Get a tidy version w/ broom: 
+palmetto_blr_tidy <- broom::tidy(palmetto_blr)
+
+```
+
+**Table 1.** 
+
+<div align="center">
+```{r, results = 'asis'}
+# Present binary linear regression model outcome in a finalized regression table
+stargazer(palmetto_blr, type = "html", 
+          title = "Binary Linear Regression Results",
+          dep.var.labels = "Species = Sabal etonia",
+          covariate.labels = c("Height", "Length", "Width", "Green leaf count"))
+```
+</div>
+
+
+## Evaluate Model Prediction Success
+
+```{r}
+# Create a new subset that converts log odds to a probability
+palmetto_blr_fitted <- palmetto_blr %>% 
+  broom::augment(type.predict = "response")
+
+# Model visualization
+# model_viz <- ggplot(data = palmetto_blr_fitted, aes(x = green_lvs, y = .fitted)) +
+#   geom_point(aes(color = species)) +
+#   geom_smooth(aes(color = species), se = FALSE) +
+#   labs(x = "Green Leaves",
+#        y = "Probability of Sabal etonia")
+
+# Create a new subset with a column that lists which species the model would classify the plant as given a 50% probability cutoff (generated from the 4 predictor variables)
+palmetto_blr_fitted_sub <- palmetto_blr_fitted %>% 
+  select(species, .fitted) %>%
+  mutate(predicted_species = case_when(  # make a new column for which species the model predicts using a 50% cutoff
+    .fitted >= 0.5 ~ "2",
+    .fitted < 0.5 ~ "1")) %>% 
+  mutate(classification = case_when(  # make a new column that lists if model was correctly classified or not by model
+    species == predicted_species ~ "correct",
+    species != predicted_species ~ "incorrect")) %>% 
+  mutate(species = as.numeric(species)) %>% 
+  mutate(predicted_species = as.numeric(predicted_species)) %>% 
+  group_by(species, classification) %>% 
+  count(classification) 
+
+# Make a table data subset
+palmetto_table <- palmetto_blr_fitted_sub %>% 
+  pivot_wider(names_from = classification,
+              values_from = n) %>% 
+  mutate(species = case_when(  # rename species 1 and 2 to real names
+    species %in% 1 ~ "Serenoa repens",
+    species %in% 2 ~ "Sabal etonia")) %>% 
+  column_to_rownames(var = "species")
+
+# Add another column to `palmetto_table` that displays percent correctly classified
+palmetto_table['percent_correct'] = palmetto_table['correct'] / (palmetto_table['correct'] + palmetto_table['incorrect']) * 100
+```
+
+
+**Table 2.** 
+```{r}
+# Finalized table
+kbl(palmetto_table, digits = 2,
+      col.names = c("Correctly Classified", "Incorrectly Classified", "% Correctly Classified")) %>% 
+  kable_styling(full_width = F, position = "center") %>% 
+  column_spec(1, italic = TRUE)
+
+```
+
+
+
+**Data Citation:** [Abrahamson, W.G. 2019. Survival, growth and biomass estimates of two dominant palmetto species of south-central Florida from 1981 - 2017, ongoing at 5-year intervals ver 1. Environmental Data Initiative.](https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5)
