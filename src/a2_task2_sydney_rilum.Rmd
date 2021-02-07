@@ -21,7 +21,7 @@ library(kableExtra)
 
 ## Introduction
 
-In this report, binary logistic regression is utilized to test the feasibility of using the variables plant height, canopy length, canopy width, and number of green leaves to classify whether a palmetto plant is of the species *Serenoa repens* (species 1) or *Sabal etonia* (species 2). The data was acquired from [Abrahamson's 2019 study](https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5) conducted in south-central Florida from 1981 - 2017, at 5 year intervals, for the two dominant palmetto species.
+In this report, binary logistic regression is utilized to test the feasibility of using the variables plant height, canopy length, canopy width, and number of green leaves to classify whether a palmetto plant is of the species *Serenoa repens* or *Sabal etonia*. The data was acquired from [Abrahamson's 2019 study](https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5) conducted at the Archbold Biological Station in south-central Florida from 1981 - 2017, at 5 year intervals, for the two dominant palmetto species.
 
 
 ## Exploratory Data Visualizations
@@ -32,7 +32,10 @@ palmetto <- read_csv(here("data", "palmetto.csv"),
   mutate(height = as.numeric(height)) %>%  # change interested variables to numeric class
   mutate(width = as.numeric(width)) %>% 
   mutate(length = as.numeric(length)) %>% 
-  mutate(green_lvs = as.numeric(green_lvs))
+  mutate(green_lvs = as.numeric(green_lvs)) %>% 
+  mutate(Species = case_when(  # rename species 1 and 2 to real names in separate column
+    species %in% 1 ~ "Serenoa repens",
+    species %in% 2 ~ "Sabal etonia"))
 
 ```
 
@@ -40,45 +43,41 @@ palmetto <- read_csv(here("data", "palmetto.csv"),
 ```{r, fig.align = "center"}
 # Data visualization, height vs. length
 ggplot(data = palmetto, aes(x = length, y = height)) +
-  geom_point(aes(color = species)) +
-  scale_color_discrete(name = "Palmetto Species",
-                       breaks = c("1", "2"),
-                       labels = c("Serenoa repens", "Sabal etonia")) +
+  geom_point(aes(color = Species)) +
   scale_color_manual(values = c("darkseagreen","lightskyblue")) +
   labs(x = "Canopy Length (cm)",
        y = "Plant Height (cm)",
        title = "Palmetto Height vs. Canopy Length") +
-  theme_minimal() 
+  theme_minimal()
 
 ```
 
 **Figure 1.** Exploratory plot comparing the relationship between palmetto height (cm) and canopy length (cm) by species. Data: Abrahamson (2019).
 
-For both palmetto species, plant height appears to increase with increase in canopy length.
+For both palmetto species, plant height appears to increase with an increase in canopy length.
 
 
 ```{r, fig.align = "center"}
 # Data visualization, height vs. green leaf count
 ggplot(data = palmetto, aes(x = green_lvs, y = height)) +
-  geom_point(aes(color = species)) +
-  facet_wrap(~ species) +
-  scale_color_discrete(name = "Palmetto Species",
-                       breaks = c("1", "2"),
-                       labels = c("Serenoa repens", "Sabal etonia")) +
+  geom_point(aes(color = Species)) +
+  facet_wrap(~ Species) +
+  scale_color_manual(values = c("darkseagreen","lightskyblue")) +
   labs(x = "Number of Green Leaves",
        y = "Plant Height (cm)",
        title = "Palmetto Height vs. Green Leaf Count") +
-  theme_minimal()
+  theme_minimal() +
+  theme(legend.position = "none")
 ```
 
 **Figure 2.** Exploratory plot comparing the relationship between palmetto height (cm) and number of green leaves observed for each species. Data: Abrahamson (2019).
 
-The number of green leaves on a palmetto plant has a slight trend of higher green leaf count with an increase plant height. *Serenoa repens* species has a greater range of number of green leaves, from 1 - 15 leaves, while the *Sabal etonia* species has a smaller range of 0 - 10 leaves and smaller max count of 10 leaves.
+The number of green leaves on a palmetto plant has a slight trend of increase in green leaf count with an increase in plant height. *Serenoa repens* species has a greater range of number of green leaves, from 1 - 15 leaves, while the *Sabal etonia* species has a smaller range of 0 - 10 leaves and smaller max count of ~ 10 leaves.
 
 ```{r, fig.align = "center"}
 # Data visualization, green leaf count by species  
-ggplot(data = palmetto, aes(x = species, y = green_lvs)) +
-  geom_jitter(aes(color = species,
+ggplot(data = palmetto, aes(x = Species, y = green_lvs)) +
+  geom_jitter(aes(color = Species,
                   alpha = 0.3)) +
   scale_color_manual(values = c("darkseagreen","lightskyblue")) +
   geom_boxplot(fill = NA, 
@@ -89,8 +88,6 @@ ggplot(data = palmetto, aes(x = species, y = green_lvs)) +
                size=3, 
                color="black", 
                fill="black") +
-  scale_x_discrete(breaks = c("1", "2"),
-                   labels = c("Serenoa repens", "Sabal etonia")) +
   labs(x = "Palmetto Species",
        y = "Number of Green Leaves",
        title = "Green Leaf Count by Palmetto Species") +
@@ -98,7 +95,7 @@ ggplot(data = palmetto, aes(x = species, y = green_lvs)) +
   theme(legend.position = "none")
 ```
 
-**Figure 3.** Comparison between the number of green leaves on the palmetto species *Serenoa repens* and *Sabal etonia*. Box endpoints indicate the 25^th^ and 75^th^ percentile values; the black line and black point within the box indicate the median and mean value for each species, respectively. Data: Abrahamson (2019).
+**Figure 3.** Comparison between the number of green leaves on the palmetto species *Serenoa repens* and *Sabal etonia*. Box endpoints indicate the 25^th^ and 75^th^ percentile values; the bolded black line and black point within the box indicate the median and mean value for each species, respectively, and the black points at either end of the vertical lines indicate outliers. Data: Abrahamson (2019).
 
 *Serenoa repens* species has a greater mean and median number of green leaves (~7.5) per plant, as well as a larger range, than that of the *Sabal etonia* species with a mean and median number of ~4 green leaves per plant.
 
@@ -129,19 +126,19 @@ palmetto_blr_tidy <- broom::tidy(palmetto_blr)
 
 ```
 
-**Table 1.** A table containing the binary logistic regression model results that predicts the probability of a palmetto plant being *Serenoa repens* or *Sabal etonia*, based off the predictor variables: plant height, canopy length, canopy width, and number of green leaves. Coefficients, standard errors (in parentheses), and significance information are indicated for each predictor variable based on the dependent variable (*Sabal etonia* species). Data: Abrahamson (2019).
+**Table 1.** A table containing the results of the binary logistic regression model that predicts the probability of a palmetto plant being *Serenoa repens* or *Sabal etonia*, based off the predictor variables: plant height, canopy length, canopy width, and number of green leaves. Coefficients, standard errors (in parentheses), and significance information are indicated for each predictor variable based on the dependent variable (*Sabal etonia* species). Data: Abrahamson (2019).
 <div align="center">
 ```{r, results = 'asis'}
 # Present binary linear regression model outcome in a finalized regression table
 stargazer(palmetto_blr, type = "html", 
-          title = "Binary Linear Regression Results",
+          title = "Binary Logistic Regression Results",
           dep.var.labels = "Species: Sabal etonia",
           covariate.labels = c("Height", "Length", "Width", "Green leaf count"))
 ```
 </div>
 
 
-## Evaluate Model Prediction Success
+## Evaluating Model Prediction Success
 
 ```{r}
 # Create a new subset that converts log odds to a probability
