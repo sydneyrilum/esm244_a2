@@ -2,13 +2,27 @@
 title: "TidyTuesday Data: Plastic Pollution"
 author: "Sydney Rilum"
 date: "2/2/2021"
-output: html_document
+output: 
+  html_document:
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(tidyverse)
-library(ggthemes)
+library(tidytuesdayR)
+library(here)
+library(ggforce) # sankey plot
+library(magick) # adding png images
+
+#Extra
+library(skimr)
+library(ggalluvial)
+library(lubridate)
+library(ggtext)
+library(colorspace)
+library(extrafont)
+
 ```
 
 ```{r}
@@ -20,7 +34,8 @@ plastics <- tuesdata$plastics
 ```
 
 ```{r}
-# Wtangle the data
+#Wrangle the data
+# skim(plastics)
 
 plastics %>% 
   distinct(parent_company)
@@ -30,53 +45,355 @@ sr_plastics <- plastics %>%
   select(-c("empty", "num_events", "volunteers")) %>% 
   filter(plastic_type == "grand_total")
 
-# ideas, top 5 or 10 plastic polluting companies
+```
+
+```{r}
+# TIDY TUESDAY data wrangling
+
+# Top 5 plastic polluting companies in Canada
+canada_2020 <- plastics %>%
+            filter(country == "Canada", 
+                   year == 2020,
+                   parent_company != "null",
+                   parent_company != "Unbranded") %>%
+            arrange(desc(grand_total)) %>% 
+            slice_head(n = 5)
+  
+company_names <- unique(canada_2020$parent_company)
+
+# Factor parent_company and select columns to pivot_longer
+canada <- canada_2020 %>%
+                    mutate(parent_company = factor(parent_company, 
+                                            levels = company_names)) %>%
+                    select(-year,-country, 
+                           -empty,-o,-grand_total, 
+                           -num_events, -volunteers) 
+
+# pivot_longer to be able to gather_set_data, required format for Sankey plot 
+longer <- pivot_longer(canada, 
+                       cols = 2:7, 
+                       names_to = "plastic_type", 
+                       values_to = "n") %>% 
+            arrange(desc(n))
+
+# gather_set_data to obtain x, y, id for geom_parallel
+gather_longer <- gather_set_data(data = longer, x = 1:2)
+```
+
+```{r}
+# TIDY TUESDAY visualization
+canada_plot <- ggplot(gather_longer, aes(x = x, id = id, split = y, value = n)) +
+  geom_parallel_sets(aes(fill = parent_company), alpha = 0.6, axis.width = 0.1) +
+  geom_parallel_sets_axes(axis.width = 0.1) +
+  #geom_parallel_sets_labels(angle = 0, color = "white") + # automatic labeling
+  labs(title = "Canada's Top Polluting Brands of 2020", 
+       subtitle = "Distribution of plastic types from the top 5 brands of trash collected \n in the Break Free From Plastic cleanups in Canada.",
+       x = "ff",
+       caption = c("Data Visualization by Sydney Rilum \n   #TidyTuesday", "")) +
+  theme_void() +
+  theme(plot.title = element_text(hjust = .5, size = 20, face = "bold"),
+        plot.subtitle = element_text(hjust = .5),
+        plot.caption = element_text(hjust = c(.91,.2)),
+        legend.position = "none",
+        plot.margin=unit(c(1,0,.5,-.5),"cm"))+
+  scale_x_discrete(expand = c(-.24,.38)) +
+  annotate(              # Annotate plastic labels manually
+    geom = "text",
+    x = 2,
+    y = 275,
+    label = "IDPE",
+    size = 4,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 2,
+    y = 179,
+    label = "PS",
+    size = 4,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 2,
+    y = 120,
+    label = "PET",
+    size = 4,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 2,
+    y = 57,
+    label = "PP",
+    size = 4,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 2,
+    y = 18.5,
+    label = "HDPE",
+    size = 2.5,
+    color = "white") +
+  annotate(              # Annotate company names manually
+    geom = "text",
+    x = 1.001,
+    y = 272,
+    label = "Costco",
+    size = 4,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 1.001,
+    y = 187,
+    label = "Pepsico",
+    size = 4,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 0.992,
+    y = 125,
+    label = "SC 
+  Johnson",
+    size = 3.75,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 1.000,
+    y = 65,
+    label = "Walmart",
+    size = 3.75,
+    color = "white") +
+  annotate(
+    geom = "text",
+    x = 0.997,
+    y = 15,
+    label = "Hershey 
+  Company",
+    size = 3,
+    color = "white") +
+  ggsave("canada.png")  # save plot as a PNG
+
+
+canada_plot
+```
+
+```{r}
+## Adding break free from plastic logo to the bottom corner of my plot
+# Read in saved Canada plot png
+canada_plot <-image_read(here("src", "canada.png"))
+
+# Read in Break Free From Plastic logo image
+logo <- image_read(here("logo.png"))
+
+# print(canada_plot)
+# print(logo)
+
+# get dimensionss of the plot
+plot_height <- magick::image_info(canada_plot)$height
+plot_width <- magick::image_info(canada_plot)$width
+
+# get dimensions of the logo
+logo_width <- magick::image_info(logo)$width
+logo_height <- magick::image_info(logo)$height
+
+# get number of pixels to be 1% from the bottom of the plot
+# while accounting for the logo height
+plot_height - logo_height - plot_height * 0.01
+
+# get number of pixels to be 1% from the left of the plot
+plot_width * 0.01
+
+# add logo to plot!
+canada_plot %>% 
+  image_composite(logo, offset = "+21+1939") 
 
 ```
 
 
 
 ```{r}
-plastics1 <- plastics %>% 
-  mutate(country = str_to_title(country)) %>%
-  group_by(country, parent_company) %>% 
-  summarise(hdpe = sum(hdpe, na.rm = TRUE),
-            ldpe = sum(ldpe, na.rm = TRUE),
-            other = sum(o, na.rm = TRUE),
-            pet = sum(pet, na.rm = TRUE),
-            pp = sum(pp, na.rm = TRUE),
-            ps = sum(ps, na.rm = TRUE),
-            pvc = sum(pvc, na.rm = TRUE),
-            grand_total = sum(grand_total, na.rm = TRUE)) %>% 
-  pivot_longer(cols = hdpe:pvc, names_to = "plastic_type", values_to = "plastic_count") %>% 
-  select(country, parent_company, plastic_type, plastic_count, grand_total) %>% 
-  mutate(perc = round(plastic_count / grand_total, 2)) %>% 
-  filter(country != "Empty")
+# ALLUVIAL PLOT
 
-plastics1 %>% 
-  filter(parent_company == "The Coca-Cola Company") %>% 
-  filter(perc != "NaN") %>% 
-  filter(plastic_type == "pet") %>% 
-  mutate(country = fct_recode(country,
-                              "United Kingdom" = 
-                                "United Kingdom Of Great Britain & Northern Ireland" )) %>% 
-  ggplot(aes(x = fct_reorder(country, perc), y = perc)) +
-  geom_segment(aes(xend=country, yend=0), alpha = 0.5) +
-  geom_point(aes(size = grand_total), alpha = 0.5) +
+## Author : Jenn Schilling
+
+# Replace null with unbranded
+plastics_clean <- plastics %>%
+  # Replace null with Unbranded in Parent Company
+  mutate(parent_company = ifelse(tolower(parent_company) == 'null', 
+                                 'Unbranded', 
+                                 parent_company)) %>%
+  # Remove Grand Total in Parent Company
+  filter(!(tolower(parent_company) == "grand total")) %>%
+  # Standardize Nestlé vs Nestle
+  mutate(parent_company = ifelse(parent_company == 'Nestle',
+                                 'Nestlé',
+                                 parent_company)) %>%
+  # Make long by plastic type
+  pivot_longer(empty:grand_total, 
+               names_to = 'plastic_type', 
+               values_to = 'count',
+               values_drop_na = TRUE) %>%
+  # Remove 0 counts
+  filter(count != 0)
+
+#### Explore the Data #######
+
+# Companies Worldwide - must be in more than 1 country
+plastics_company <- plastics_clean %>%
+  group_by(year, parent_company, plastic_type) %>%
+  summarise(total = sum(count),
+            n = n()) %>%
+  filter(n > 1) %>%
+  ungroup()
+
+# Which company has the highest plastic count?
+plastics_company %>%
+  filter(parent_company != 'Unbranded') %>%
+  filter(plastic_type == 'grand_total') %>%
+  arrange(-total) 
+
+# Which company was found in the most countries?
+plastics_company %>%
+  filter(parent_company != 'Unbranded') %>%
+  filter(plastic_type == 'grand_total') %>%
+  arrange(-n)
+
+# Which plastic type has the highest count?
+plastics_company %>%
+  filter(plastic_type != 'grand_total') %>%
+  group_by(year, plastic_type) %>%
+  summarise(total = sum(total)) %>%
+  arrange(-total)
+
+# PET - Polyester plastic count (Polyester fibers, soft drink bottles, food containers, plastic bottles)
+
+# Which company has the highest PET count?
+plastics_company %>%
+  filter(parent_company != 'Unbranded') %>%
+  filter(plastic_type == 'pet') %>%
+  arrange(-total) 
+
+#### Plot the Data ####
+# Code Source: https://cran.r-project.org/web/packages/ggalluvial/vignettes/ggalluvial.html
+
+plastics_company_sub <- plastics_company %>%
+  # Fix PepsiCo names so the years match
+  mutate(parent_company = ifelse(parent_company == 'Pepsico',
+                                 'PepsiCo',
+                                 parent_company)) %>%
+  # Remove grand total and empty plastic types
+  filter(plastic_type != 'grand_total' &
+           plastic_type != 'empty') %>%
+  # Get companies with highest totals
+  filter(parent_company %in% c(
+                              'The Coca-Cola Company',
+                              'PepsiCo',
+                              'Nestlé',
+                              'Pure Water, Inc.',
+                              'Universal Robina Corporation',
+                              'Colgate-Palmolive',
+                              'Unilever'
+                              )) %>%
+  # Just 2020
+  filter(year == 2020) %>%
+  # Capitalize Plastic Code
+  mutate(plastic_type = toupper(plastic_type))
+ 
+
+ggplot(plastics_company_sub,
+       aes(y = total,
+           axis1 = fct_reorder(plastic_type, total),
+           axis2 = fct_reorder(parent_company, total),
+           fill = fct_reorder(plastic_type, total))) +
+  geom_alluvium(width = 1/16) +
+  geom_stratum(width = 1/16, alpha = 0.5) +
+  geom_text(stat = "stratum", 
+            aes(label = fct_reorder(parent_company, total)),
+            nudge_x = 0.05) + #after_stat(stratum))) +
   coord_flip() +
-  theme_fivethirtyeight() +
-  labs(title = "The Coca-Cola Company Plastic Pollution", 
-       subtitle = "Percentage of PET among other types of plastic", 
-       caption =  "Break Free from Plastic | Image: @maxwelco",
-       x = "",
-       size = "Total count") +
-  scale_y_continuous("", labels = scales::percent_format(scale = 100)) +
-  theme(legend.position = "bottom",
-        plot.subtitle = element_text(hjust = 0),
-        plot.caption = element_text(hjust = 0)) +
-  ggsave("coca.png", height = 8)
+  labs(title = "Plastic Types from the Companies with the Most Plastic Found Worldwide in 2020",
+       subtitle = "Plastic waste is collected by volunteers around the world at Break Free from Plastic cleanup events.Volunteers track the number and types of plastic found by company.
+This graph represents the volume of plastic by type and company collected at events in 2020, for the  six companies with the most plastic found over all the events.",
+       fill = "Plastic Type",
+       caption = "TidyTuesday 26 Jan 2021 | Data: Break Free From Plastic | Designer: Jenn Schilling | jennschilling.me") +
+ # guides(fill = FALSE) +
+  theme_void() +
+  scale_fill_brewer(palette = "Dark2",
+    limits =  c("PP", "O", "PET", "HDPE", "LDPE", "PVC", "PS"),
+    labels =  c("Polypropylene", 
+                "Other", 
+                "Polyethylene terephthalate", 
+                "High-density polyethylene", 
+                "Low-density polyethylene", 
+                "Polyvinyl chloride", 
+                "Polystyrene")) +
+  theme(legend.position = "bottom")
 ```
 
 
+```{r}
+# SPATIAL MAP PLOT
 
+## Author: Rachel Roday
+## Date Created: 2021-01-26
+## Copyright (c) Rachel Roday, 2021
+## Email: rroday@udel.edu
+library(tidytuesdayR)
+library(ggplot2)
+# library(ggmap)
+# library(maptools)
+# library(maps)
+library(tidyverse)
+library(viridis)
+library(dplyr)
+library(sf)
+library(rnaturalearth)
+
+# Get the Data
+# Read in with tidytuesdayR package 
+# Install from CRAN via: install.packages("tidytuesdayR")
+# This loads the readme and all the datasets for the week of interest
+
+tuesdata <- tidytuesdayR::tt_load('2021-01-26')
+plastics <- tuesdata$plastics
+
+
+# Melt data into long format by plastics
+pmelt<-plastics %>%
+  pivot_longer(c("hdpe", "ldpe","o", "pet","pp","ps","pvc"),
+               names_to = "Plastic.Type", 
+               values_to = "Plastic.Count")
+
+# Filter by Coca Cola, 2020, PET plastic found
+pmelt2<-pmelt %>%
+  filter(parent_company == "The Coca-Cola Company", 
+         year == "2020", Plastic.Count > "0", 
+         Plastic.Type== 'pet') %>%
+  rename(region = country)
+
+# Get world map 
+world <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  select(admin)
+
+# Join lat/lon to plastics df
+pmelt3 <- left_join(world, pmelt2, by = c("admin" = "region"))
+
+# map - please dont ask me what happened to the other countries
+ggplot(pmelt3) +
+  geom_sf(data = pmelt3, aes(fill = Plastic.Count), color = "white")+
+  scale_fill_viridis_c(option = "C", name= "Plastic Count", na.value = "white")+
+  theme_minimal()+
+  theme(panel.background = element_rect(fill = "lightblue",
+                                    colour = "lightblue",
+                                    size = 0.5, linetype = "solid"),
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "lightblue"),
+    axis.title.x=element_blank(),
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    axis.title.y=element_blank(),
+    axis.text.y=element_blank(),
+    axis.ticks.y=element_blank(),
+    legend.position="bottom")+
+  labs(title="Global Coca Cola PET Pollution (2020)")
+```
 
